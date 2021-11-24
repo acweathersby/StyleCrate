@@ -6,6 +6,10 @@
   "scripts": {
     "test": "candle.cure ./test/"
   },
+  "files": [
+    "bin/",
+    "README.md"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/acweathersby/stylecrate.git"
@@ -20,5 +24,13 @@
   "bugs": {
     "url": "https://github.com/acweathersby/stylecrate/issues"
   },
-  "homepage": "https://github.com/acweathersby/stylecrate#readme"
+  "homepage": "https://github.com/acweathersby/stylecrate#readme",
+  "dependencies": {
+    "@candlelib/css": "^0.3.20",
+    "@candlelib/paraffin": "^0.1.26",
+    "@candlelib/wick": "^0.16.3"
+  },
+  "devDependencies": {
+    "@candlelib/cure": "^0.7.3"
+  }
 }
