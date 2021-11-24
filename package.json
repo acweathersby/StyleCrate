@@ -1,0 +1,24 @@
+{
+  "name": "stylecrate",
+  "version": "0.0.1",
+  "description": "CSS Style Editor Toolkit",
+  "main": "index.js",
+  "scripts": {
+    "test": "candle.cure ./test/"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/acweathersby/stylecrate.git"
+  },
+  "keywords": [
+    "CSS",
+    "Style",
+    "ToolKit"
+  ],
+  "author": "Anthony Weathersby",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/acweathersby/stylecrate/issues"
+  },
+  "homepage": "https://github.com/acweathersby/stylecrate#readme"
+}
