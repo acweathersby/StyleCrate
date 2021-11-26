@@ -1,0 +1,10 @@
+export default <div></div>;
+
+<style>
+    root {
+        width:120px;
+        height:120px;
+        background-color:yellow;
+    }
+</style>
+

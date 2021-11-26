@@ -1,7 +1,7 @@
 {
   "name": "stylecrate",
   "version": "0.0.1",
-  "description": "CSS Style Editor Toolkit",
+  "description": "CSS Editing Toolkit",
   "main": "index.js",
   "scripts": {
     "test": "candle.cure ./test/"
@@ -26,11 +26,11 @@
   },
   "homepage": "https://github.com/acweathersby/stylecrate#readme",
   "dependencies": {
-    "@candlelib/css": "^0.3.20",
-    "@candlelib/paraffin": "^0.1.26",
-    "@candlelib/wick": "^0.16.3"
+    "@candlelib/css": "*",
+    "@candlelib/paraffin": "*",
+    "@candlelib/wick": "*"
   },
   "devDependencies": {
-    "@candlelib/cure": "^0.7.3"
+    "@candlelib/cure": "*"
   }
 }

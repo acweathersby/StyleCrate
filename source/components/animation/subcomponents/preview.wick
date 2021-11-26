@@ -1,0 +1,22 @@
+import preview_element from "./preview_element"
+import {anim_sys} from "@props";
+
+function onmount(){ anim_sys.set_ele("@preview_element"); }
+
+export default <div> <preview_element/> </div>;
+
+<style>
+
+    root {
+        background-color:#121212;
+        width:100%;
+        height:75%;
+        overflow: hidden;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+    }
+
+</style>
+
+

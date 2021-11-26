@@ -1,0 +1,21 @@
+import preview from "./subcomponents/preview"
+import timeline from "./subcomponents/timeline"
+import { AnimSys } from "./scripts/anim-sys.js"
+
+const anim_sys = new AnimSys();
+
+export default <div>
+    <preview {anim_sys} />
+    <timeline {anim_sys} />
+</div>;
+
+<style>
+
+    root {
+        color:white;
+        display:flex;
+        flex-direction: column;
+        height:100vh;
+    }
+
+</style>;
