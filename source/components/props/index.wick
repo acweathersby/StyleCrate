@@ -1,0 +1,10 @@
+import css_val from "@props";
+
+
+function $init(css_val){
+    console.log(css_val);
+}
+
+export default <div>
+
+</div>
