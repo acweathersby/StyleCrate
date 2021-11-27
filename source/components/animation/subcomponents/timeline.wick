@@ -1,41 +1,93 @@
 import {anim_sys} from "@props";
 
-let playing = false;
+let SCRUBBING = false;
+let PLAYING = false;
+let pointer_id = 0;
+let props = [];
 
 function onmount(){ 
     anim_sys.set_ctx("@canvas");
     "@canvas".width = "@root".offsetWidth - 80;
+    "@canvas".height = "@root".offsetHeight - 80;
     anim_sys.drawGraph();
 }
 
-function draw(e){
-    anim_sys.set_user_x(e.offsetX);
-    anim_sys.set_user_y(e.offsetY);
-    anim_sys.drawGraph();
-}
 
 function play(e){
-    if(!playing){
-        playing = true;
+    if(!PLAYING){
+        PLAYING = true;
         anim_sys.play();
     }else{
-        playing = false;
+        PLAYING = false;
         anim_sys.pause();
     }
 }
 
-function setTransport(e){
-    anim_sys.set_transport(e.offsetX);
+function scrub(e){
+     if(SCRUBBING)
+        anim_sys.apply_delta(e.offsetX);
+    anim_sys.set_user_x(e.offsetX);
+    anim_sys.set_user_y(e.offsetY);
+}
+
+function scrub_start(e){
+
+    pointer_id = e.pointerId;
+
+    e.target.setPointerCapture(pointer_id);
+
+    anim_sys.start_delta(e.offsetX, e.offsetY);
+
+    const prop = anim_sys.getKeyFrameAtPoint(e.offsetX, e.offsetY);
+
+    if(prop){
+        console.log(1)
+        props = [{prop:prop[3].prop_name, key:prop[1]}]
+    }
+
+    SCRUBBING = true;
+}
+
+function scrub_end(e){
+    e.target.releasePointerCapture(pointer_id);
+    SCRUBBING = false;
+}
+
+function set_transport(e){
+    anim_sys.set_play_pos(e.offsetX);
 }
 
 export default <div>
     <div class=buttons>
-        <button> prev-key </button>
-        <button onclick=play> { playing ? "pause" : "play" } </button>
-        <button> next-key </button>
+        <button onclick={e=>anim_sys.set_play_pos_to_prev_keyframe()}> prev-key </button>
+        <button onclick=play> { PLAYING ? "pause" : "play" } </button>
+        <button onclick={e=>anim_sys.set_play_pos_to_next_keyframe()}> next-key </button>
         <button> export </button>
     </div>
-    <canvas onmousemove=draw onclick=setTransport></canvas>
+    <canvas 
+        onpointerdown=scrub_start
+        onpointerup=scrub_end
+        onpointermove=scrub
+    />
+    <container data={props}>
+        <div>
+            Hello World dur: {prop} {key.t_dur} del: {key.t_del} {key.val}
+            <style>
+                root { 
+                    width:300px;
+                    height:300px;
+                    background-color:black;
+                    padding:30px;
+                    top:50px;
+                    left:50px;
+                    position:fixed;
+                    color:red;
+                    
+                } 
+            </style>
+        </div>
+    </container>
+
 </div>;
 
 
@@ -83,5 +135,3 @@ export default <div>
     }
 
 </style>
-
-
