@@ -1,6 +1,6 @@
 import preview from "./subcomponents/preview"
 import timeline from "./subcomponents/timeline"
-import { AnimSys } from "./scripts/anim-sys.js"
+import { AnimSys } from "./scripts/anim-sys.ts"
 
 const anim_sys = new AnimSys();
 
