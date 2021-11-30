@@ -6,12 +6,14 @@ const anim_sys = new AnimSys();
 
 export default <div>
     <preview {anim_sys} />
-    <timeline {anim_sys} />
+    <timeline model={anim_sys} />
 </div>;
 
 <style>
 
     root {
+        font-family: arial, sans-serif;
+        font-size:14px;
         color:white;
         display:flex;
         flex-direction: column;

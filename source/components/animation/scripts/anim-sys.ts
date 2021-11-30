@@ -1,9 +1,19 @@
 
-import glow, { AnimProp, AnimSequence, Key } from "@candlelib/glow";
+import glow, { AnimProp, AnimSequence, Key, VectorAnimProp } from "@candlelib/glow";
 
 import spark, { Sparky } from "@candlelib/spark";
 
-export class AnimSys implements Sparky {
+import { ObservableModel, ObservableWatcher } from "@candlelib/wick";
+
+const curve_colors = [
+    "#9b55c9", //Purplish
+    "#2df0f7", //Light Blue
+    "#f25124", //Blood Orange
+    "#f54949", //Light Red
+    "#e6ba1e", //Light-Gold,
+];
+
+export class AnimSys implements Sparky, ObservableModel {
 
     user_x: number;
     user_y: number;
@@ -22,7 +32,9 @@ export class AnimSys implements Sparky {
     delta_type: "KF" | "SCRUB";
 
     PLAYING: boolean;
-    selected_keyframes: [Key<any> | null, Key<any>, Key<any> | null, AnimProp<any>] | null;
+    selected_keyframes: [Key<any>, AnimProp<any>] | null;
+
+    watchers: ObservableWatcher[];
 
     constructor() {
         this.user_x = 0;
@@ -41,7 +53,29 @@ export class AnimSys implements Sparky {
         this.PLAYING = false;
         this.delta_type = "KF";
         this.selected_keyframes = null;
+        this.watchers = [];
     }
+
+    get OBSERVABLE(): true { return true; }
+
+    subscribe(w: ObservableWatcher) {
+        if (!this.watchers.includes(w))
+            this.watchers.push(w);
+        return true;
+    }
+
+    unsubscribe(w: ObservableWatcher) {
+        let i = this.watchers.indexOf(w);
+        if (i >= 0)
+            this.watchers.splice(i, 1);
+        return true;
+    }
+
+    private updateWatchers() {
+        for (const w of this.watchers)
+            w.onModelUpdate(this);
+    }
+
     set() {
         //@ts-ignore
         this.anim = glow({
@@ -49,7 +83,9 @@ export class AnimSys implements Sparky {
             opacity: [{
                 val: 0,
                 dur: 0,
-                del: 200
+            }, {
+                val: 0,
+                dur: 200,
             }, {
                 val: 1,
                 dur: 500,
@@ -58,18 +94,16 @@ export class AnimSys implements Sparky {
                 dur: 1400,
             }, {
                 val: 0,
-                dur: 200,
+                dur: 200
             }],
             transform: [{
-                val: "translateX(200px)",
-                dur: 0
+                val: "translateX(200px) rotate(20deg)",
+                dur: 0,
             }, {
                 val: "translateX(0px)",
                 dur: 1100,
-                //@ts-expect-error
-                eas: glow.easing.ease_in
             }, {
-                val: "translateX(-200px)",
+                val: "translateX(-200px) rotate(50deg)",
                 dur: 1100,
                 //@ts-expect-error
                 eas: glow.easing.ease_out
@@ -102,11 +136,22 @@ export class AnimSys implements Sparky {
 
         for (const [, prop] of this.anim.props) {
             let candidate = 0;
-            for (const kf of prop.keys) {
-                if (kf.starting_tic + kf.duration >= this.play_pos)
+
+            if (prop instanceof VectorAnimProp)
+                for (const keys of prop.scalar_keys) {
+                    for (const kf of keys) {
+                        if (kf.t_off >= this.play_pos)
+                            continue;
+                        else {
+                            candidate = kf.t_off;
+                        }
+                    }
+                }
+            else for (const kf of prop.keys) {
+                if (kf.t_off >= this.play_pos)
                     continue;
                 else {
-                    candidate = kf.starting_tic + kf.duration;
+                    candidate = kf.t_off;
                 }
             }
             true_x = Math.max(candidate, true_x);
@@ -125,12 +170,25 @@ export class AnimSys implements Sparky {
         for (const [, prop] of this.anim.props) {
             let candidate = this.anim.duration;
 
-            for (const kf of prop.keys) {
-                if (kf.starting_tic + kf.duration <= this.play_pos)
-                    continue;
-                else {
-                    candidate = kf.starting_tic + kf.duration;
-                    break;
+
+            if (prop instanceof VectorAnimProp) {
+                for (const keys of prop.scalar_keys)
+                    for (const kf of keys) {
+                        if (kf.t_off <= this.play_pos)
+                            continue;
+                        else {
+                            candidate = kf.t_off;
+                            break;
+                        }
+                    }
+            } else {
+                for (const kf of prop.keys) {
+                    if (kf.t_off <= this.play_pos)
+                        continue;
+                    else {
+                        candidate = kf.t_off;
+                        break;
+                    }
                 }
             }
 
@@ -214,43 +272,37 @@ export class AnimSys implements Sparky {
             }
 
             this.drawGraph();
+
+            this.updateWatchers();
         }
     }
 
-    getKeyFrameAtPoint(upx = this.user_x, upy = this.user_y): [Key<any> | null, Key<any>, Key<any> | null, AnimProp<any>] | null {
+    getKeyFrameAtPoint(upx = this.user_x, upy = this.user_y): [Key<any>, AnimProp<any>] | null {
 
         if (!this.anim) return null;
 
         let level = 1;
 
-
-
         for (const [name, prop] of this.anim.props) {
 
-            const y = (level * 20);
+            if (prop instanceof VectorAnimProp) {
 
-            let prev = null;
+            } else {
+                const y = (level * 20);
 
-            let i = 0;
+                for (const key of prop.keys) {
+                    const x = key.t_off * this.scale_x;
 
-            for (const key of prop.keys) {
-
-                const start = key.starting_tic + key.duration;
-                const x = (start) * this.scale_x;
-
-                if (
-                    Math.abs(x - upx) < 6
-                    &&
-                    Math.abs(y - upy) < 6
-                ) {
-                    return [prev, key, prop.keys[i + 1] || null, prop];
+                    if (
+                        Math.abs(x - upx) < 6
+                        &&
+                        Math.abs(y - upy) < 6
+                    ) {
+                        return [key, prop];
+                    }
                 }
-
-                prev = key;
-
-                i++;
+                level++;
             }
-            level++;
         }
 
         return null;
@@ -274,8 +326,6 @@ export class AnimSys implements Sparky {
             const upx = this.user_x;
             const upy = this.user_y;
             const tic_distance = 20;
-
-
 
             //Draw tic marks
             let tic_mark_count = Math.round(width / tic_distance);
@@ -319,51 +369,28 @@ export class AnimSys implements Sparky {
                     ctx.fillStyle = "white";
                     ctx.fillText(name, 0, y + 6);
 
-                    for (const key of prop.keys) {
-
-
-
-                        let center_offset = 4;
-                        ctx.fillStyle = "yellow";
-                        const start = key.starting_tic + key.duration;
-                        const delay = key.t_del;
-                        const x = (start) * tic_scale;
-
-                        if (
-                            Math.abs(x - upx) < 6
-                            &&
-                            Math.abs(y - upy) < 6
-                        ) {
-                            center_offset = 5;
+                    if (prop instanceof VectorAnimProp) {
+                        for (const keys of prop.scalar_keys) {
+                            ctx.fillStyle = "#ff872b";
+                            drawKeys(keys, ctx, tic_scale, y, upx, upy);
                         }
-
-                        if (key.t_del > 0) {
-                            ctx.save();
-                            ctx.fillStyle = ("red");
-
-                            ctx.fillRect(key.starting_tic * tic_scale, y - 2, key.t_del * tic_scale, 4);
-
-                            ctx.restore();
-                        }
-
-                        ctx.save();
-
-                        ctx.translate(x, y);
-
-
-
-                        ctx.rotate(Math.PI / 4);
-
-                        ctx.fillRect(
-                            -center_offset,
-                            -center_offset,
-                            center_offset * 2,
-                            center_offset * 2
-                        );
-
-                        ctx.restore();
+                    } else {
+                        ctx.fillStyle = "#2df0f7";
+                        drawKeys(prop.keys, ctx, tic_scale, y, upx, upy);
+                        level++;
                     }
-                    level++;
+                }
+                let i = 0;
+                for (const [name, prop] of this.anim.props) {
+                    if (prop instanceof VectorAnimProp) {
+                        for (const keys of prop.scalar_keys) {
+                            const color = curve_colors[i++ % curve_colors.length];
+                            drawCurves(keys, ctx, tic_scale, upx, upy, color);
+                        }
+                    } else {
+                        const color = curve_colors[i++ % curve_colors.length];
+                        drawCurves(prop.keys, ctx, tic_scale, upx, upy, color);
+                    }
                 }
             }
         }
@@ -402,26 +429,11 @@ export class AnimSys implements Sparky {
 
                     if (this.selected_keyframes) {
 
-                        const [prev, curr, next, prop] = this.selected_keyframes;
+                        const [curr, prop] = this.selected_keyframes;
 
                         const x = diff_x / this.scale_x;
 
-                        const adjust = curr.duration + x;
-
-                        if (adjust < 0) {
-
-                        } else if (adjust == 0) {
-
-                        } else if (next && (curr.t_off + x) > next.t_off) {
-
-                        } else {
-
-                            shiftKeyFrame(curr, x);
-
-                            if (next)
-                                shiftKeyFrame(next, -x);
-                        }
-
+                        curr.t_off += x;
 
                         prop.updateKeys();
 
@@ -446,20 +458,208 @@ export class AnimSys implements Sparky {
         //Add a history object if changes were detected
     }
 }
+function drawCurves(
+    keys: Key<any>[],
+    ctx: CanvasRenderingContext2D,
+    tic_scale: number,
+    upx: number,
+    upy: number,
+    color: string = "#9b55c9"
+) {
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 2;
 
-function shiftKeyFrame(key: Key<any>, x: number) {
+    let px = 0;
+    let py = 0;
+    let prev = null;
 
-    const xr_del = key.t_del / key.duration;
+    //Get min and max values to scale items accordingly
+    let min_y = Infinity;
+    let max_y = -Infinity;
 
-    const xr_dur = key.t_dur / key.duration;
+    for (const key of keys) {
+        min_y = Math.min(key.val, min_y);
+        max_y = Math.max(key.val, max_y);
+    }
 
-    const ratio = ((key.duration + x) / key.duration);
 
-    const r_del = ratio * xr_del;
+    let height = (max_y - min_y);
+    let height_scale = 1 / height;
+    let main_scale = 120 * height_scale;
+    const base = (140);
 
-    const r_dur = ratio * xr_dur;
+    for (const key of keys) {
 
-    key.t_del = Math.round(key.t_del * r_del);
+        let y = base + (key.val * main_scale);
 
-    key.t_dur = Math.round(key.t_dur * r_dur);
+        const x = key.t_off * tic_scale;
+
+        ctx.save();
+
+        if (prev) {
+
+            let sx = (x - px);
+            let sy = (y - py);
+
+            ctx.beginPath();
+            ctx.moveTo(px, py);
+
+            if (key.p1_x >= 0) {
+
+                if (key.p2_x >= 0) {
+                    let p1x = key.p1_x * sx + px;
+                    let p1y = key.p1_y * sy + py;
+                    let p2x = key.p2_x * sx + px;
+                    let p2y = key.p2_y * sy + py;
+                    //Cubic
+                    ctx.bezierCurveTo(
+                        p1x,
+                        p1y,
+                        p2x,
+                        p2y,
+                        x, y
+                    );
+                    ctx.stroke();
+
+                    //Draw lines from center to handle
+                    drawLine(ctx, p1x, p1y, px, py, 1);
+                    drawLine(ctx, p2x, p2y, x, y, 1);
+
+                    drawBox(ctx, p1x, p1y, isPointNear(p1x, p1y, upx, upy, 3) ? 4 : 3);
+                    drawBox(ctx, p2x, p2y, isPointNear(p2x, p2y, upx, upy, 3) ? 4 : 3);
+
+                } else {
+                    let p1x = key.p1_x * sx + px;
+                    let p1y = key.p1_y * sy + py;
+                    //Quadratic
+                    ctx.quadraticCurveTo(
+                        p1x,
+                        p1y,
+                        x, y
+                    );
+
+                    drawLine(ctx, p1x, p1y, px, py, 1);
+                    drawLine(ctx, p1x, p1y, x, y, 1);
+
+                    ctx.stroke();
+                    drawBox(ctx, p1x, p1y, isPointNear(p1x, p1y, upx, upy, 3) ? 3 : 2);
+                }
+            } else {
+                ctx.lineTo(x, y);
+                ctx.stroke();
+            }
+
+            ctx.restore();
+        }
+
+        prev = key;
+        px = x;
+        py = y;
+    }
+
+    for (const key of keys) {
+        let y = base + key.val * main_scale;
+        const x = key.t_off * tic_scale;
+        drawBox(ctx, x, y, isPointNear(x, y, upx, upy, 5) ? 7 : 5);
+    }
+}
+
+function drawLine(ctx: CanvasRenderingContext2D,
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    width: number = 1
+) {
+    ctx.save();
+    ctx.lineWidth = width;
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.restore();
+}
+
+function drawBox(ctx: CanvasRenderingContext2D, p1x: number, p1y: number, r: number,) {
+    let half_r = r * 0.5;
+    ctx.fillRect(p1x - half_r, p1y - half_r, r, r);
+}
+
+function isPointNear(x: number, y: number, upx: number, upy: number, distance: number = 6) {
+    return Math.abs(x - upx) < distance
+        &&
+        Math.abs(y - upy) < distance;
+}
+
+/**
+ * Draws diamond keyframes
+ * @param keys 
+ * @param ctx 
+ * @param tic_scale 
+ * @param y 
+ * @param upx 
+ * @param upy 
+ */
+function drawKeys(
+    keys: (Key<any>)[],
+    ctx: CanvasRenderingContext2D,
+    tic_scale: number,
+    y: number,
+    upx: number,
+    upy: number
+) {
+    for (const key of keys) {
+
+        let center_offset = 4;
+
+        const x = key.t_off * tic_scale;
+
+        if (Math.abs(x - upx) < 6
+            &&
+            Math.abs(y - upy) < 6) {
+            center_offset = 5;
+        }
+
+        ctx.save();
+
+        ctx.translate(x, y);
+
+        ctx.rotate(Math.PI / 4);
+
+        ctx.fillRect(
+            -center_offset,
+            -center_offset,
+            center_offset * 2,
+            center_offset * 2
+        );
+
+        ctx.restore();
+    }
+}
+
+
+class Partition {
+    width: number;
+    height: number;
+    elements: any[];
+    partitions: Partition[];
+    constructor(
+        w: number,
+        h: number,
+    ) {
+        this.height = h;
+        this.width = w;
+        this.partitions = [];
+        this.elements = [];
+    }
+    getRadius(px: number, py: number, r: number) { };
+    getClosest(px: number, py: number) { }
+    add(ele: any) { };
+    remove(ele: any) { };
+    private split() {
+
+    }
+    private join() {
+
+    }
 }

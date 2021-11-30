@@ -1,17 +1,19 @@
-import {anim_sys} from "@props";
+import anim_sys, {play_pos as tic} from "@model";
 
 let SCRUBBING = false;
 let PLAYING = false;
 let pointer_id = 0;
 let props = [];
+let prop = "";
+let editor_slot = "";
 
 function onmount(){ 
+    
     anim_sys.set_ctx("@canvas");
     "@canvas".width = "@root".offsetWidth - 80;
     "@canvas".height = "@root".offsetHeight - 80;
     anim_sys.drawGraph();
 }
-
 
 function play(e){
     if(!PLAYING){
@@ -40,11 +42,6 @@ function scrub_start(e){
 
     const prop = anim_sys.getKeyFrameAtPoint(e.offsetX, e.offsetY);
 
-    if(prop){
-        console.log(1)
-        props = [{prop:prop[3].prop_name, key:prop[1]}]
-    }
-
     SCRUBBING = true;
 }
 
@@ -59,6 +56,7 @@ function set_transport(e){
 
 export default <div>
     <div class=buttons>
+        <div class=tic><span class=tic-label>tic</span> { tic|0 }</div>
         <button onclick={e=>anim_sys.set_play_pos_to_prev_keyframe()}> prev-key </button>
         <button onclick=play> { PLAYING ? "pause" : "play" } </button>
         <button onclick={e=>anim_sys.set_play_pos_to_next_keyframe()}> next-key </button>
@@ -69,6 +67,9 @@ export default <div>
         onpointerup=scrub_end
         onpointermove=scrub
     />
+    
+    {editor_slot}
+
     <container data={props}>
         <div>
             Hello World dur: {prop} {key.t_dur} del: {key.t_del} {key.val}
@@ -102,14 +103,13 @@ export default <div>
     }
 
     button {
-        margin: 0 10px;
+        margin: 0 5px;
         color: white;
         padding: 5px;
         background-color: #262626;
         border: 1px solid #383838;
-        border-radius: 2px;
+        border-radius: 5px;
         width: 75px;
-        height: 30px;
     }
 
     button:hover {
@@ -118,9 +118,9 @@ export default <div>
     }
 
     .buttons {
+        user-select: none;
         padding:10px;
         position:relative;
-        width: 400px;
         text-align:center;
         margin:auto;
     }
@@ -132,6 +132,25 @@ export default <div>
         left:40px;
         background-color:#262626;
         border-radius: 3px;
+    }
+
+    .tic {
+        pointer-events:none;
+        display:inline-block;
+        position:relative;
+        width:100px;
+        background-color:black;
+        border-radius:5px;
+        padding:5px;
+    }
+
+    .tic-label {
+        left:10px;
+        float:left;
+        position:relative;
+        display:inline-block;
+        color: #888;
+        width:20px;
     }
 
 </style>
