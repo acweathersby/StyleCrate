@@ -10,7 +10,6 @@ export default <div> <preview_element/> </div>;
     root {
         background-color:#121212;
         width:100%;
-        height:75%;
         overflow: hidden;
         display:flex;
         align-items:center;

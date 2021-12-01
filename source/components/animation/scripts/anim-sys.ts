@@ -1,17 +1,11 @@
-
-import glow, { AnimProp, AnimSequence, Key, VectorAnimProp } from "@candlelib/glow";
-
+import glow, { AnimateObjectArg, AnimProp, AnimSequence, Key, VectorAnimProp } from "@candlelib/glow";
 import spark, { Sparky } from "@candlelib/spark";
-
 import { ObservableModel, ObservableWatcher } from "@candlelib/wick";
+import { SequenceHarness } from './sequence.js';
+import { PartitionElement, PartitionType } from "./partition.js";
 
-const curve_colors = [
-    "#9b55c9", //Purplish
-    "#2df0f7", //Light Blue
-    "#f25124", //Blood Orange
-    "#f54949", //Light Red
-    "#e6ba1e", //Light-Gold,
-];
+
+const enum DeltaType { "NONE", "KF", "SCRUB", "PAN" };
 
 export class AnimSys implements Sparky, ObservableModel {
 
@@ -26,17 +20,21 @@ export class AnimSys implements Sparky, ObservableModel {
 
     start_pos: number;
     scale_x: number;
+    scale_y: number;
     root_x: number;
     root_y: number;
+    offset_x: number;
     __SCHD__: number;
-    delta_type: "KF" | "SCRUB";
-
+    delta_type: DeltaType;
     PLAYING: boolean;
-    selected_keyframes: [Key<any>, AnimProp<any>] | null;
-
+    selected_node: PartitionElement<PartitionType> | null;
     watchers: ObservableWatcher[];
+    sequences: SequenceHarness[];
+
+    DEBUG: boolean;
 
     constructor() {
+        this.__SCHD__ = 0;
         this.user_x = 0;
         this.user_y = 0;
         this.anim = null;
@@ -47,13 +45,25 @@ export class AnimSys implements Sparky, ObservableModel {
         this.play_pos = 0;
         this.start_pos = 0;
         this.scale_x = 0.2;
+        this.scale_y = 10;
         this.root_x = 0;
         this.root_y = 0;
-        this.__SCHD__ = 0;
+        this.offset_x = 50;
         this.PLAYING = false;
-        this.delta_type = "KF";
-        this.selected_keyframes = null;
+        this.delta_type = DeltaType.NONE;
+        this.selected_node = null;
         this.watchers = [];
+        this.sequences = [];
+        this.DEBUG = false;
+    }
+
+    toggle_debug() {
+        this.DEBUG = !this.DEBUG;
+        spark.queueUpdate(this);
+    }
+
+    addSequence(args: AnimateObjectArg) {
+        this.sequences.push(new SequenceHarness(<any>glow(args)));
     }
 
     get OBSERVABLE(): true { return true; }
@@ -70,47 +80,10 @@ export class AnimSys implements Sparky, ObservableModel {
             this.watchers.splice(i, 1);
         return true;
     }
-
     private updateWatchers() {
         for (const w of this.watchers)
             w.onModelUpdate(this);
     }
-
-    set() {
-        //@ts-ignore
-        this.anim = glow({
-            obj: this.preview_element,
-            opacity: [{
-                val: 0,
-                dur: 0,
-            }, {
-                val: 0,
-                dur: 200,
-            }, {
-                val: 1,
-                dur: 500,
-            }, {
-                val: 1,
-                dur: 1400,
-            }, {
-                val: 0,
-                dur: 200
-            }],
-            transform: [{
-                val: "translateX(200px) rotate(20deg)",
-                dur: 0,
-            }, {
-                val: "translateX(0px)",
-                dur: 1100,
-            }, {
-                val: "translateX(-200px) rotate(50deg)",
-                dur: 1100,
-                //@ts-expect-error
-                eas: glow.easing.ease_out
-            }]
-        });
-    }
-
     set_user_x(v: number) {
         this.user_x = +v || 0;;
         spark.queueUpdate(this);
@@ -126,15 +99,74 @@ export class AnimSys implements Sparky, ObservableModel {
         this.ctx = ctx_e.getContext("2d");
     }
 
-    set_ele(ele: HTMLElement) { this.preview_element = ele; this.set(); }
+    /**
+     * Set the play pos head to the x value, where x is 
+     * a user space value offset from the edge of the canvas
+     * viewport.
+     */
+    set_play_pos(x: number) {
+        if (this.sequences.length > 0) {
+            const adjusted_pos = (x - this.offset_x) / this.scale_x;
+            const true_x = Math.max(0, adjusted_pos);
+            this.play_pos = true_x;
+            spark.queueUpdate(this);
+        }
+    }
+
+    set_zoom_x_delta(delta: number) {
+        this.scale_x = Math.min(10, Math.max(0.05, this.scale_x + delta));
+        spark.queueUpdate(this);
+    }
+
+    set_zoom_y_delta(delta: number) {
+        this.scale_y = Math.min(100, Math.max(0.05, this.scale_y + delta * this.scale_y));
+        spark.queueUpdate(this);
+    }
+
+
+    set_ele(ele: HTMLElement) {
+        this.preview_element = ele;
+        if (this.preview_element)
+            this.addSequence(<any>{
+                obj: this.preview_element,
+                opacity: [{
+                    val: 0,
+                    dur: 0,
+                }, {
+                    val: 0,
+                    dur: 200,
+                }, {
+                    val: 1,
+                    dur: 500,
+                }, {
+                    val: 1,
+                    dur: 1400,
+                }, {
+                    val: 0,
+                    dur: 200
+                }],
+                transform: [{
+                    val: "translateX(20px) rotate(20deg)",
+                    dur: 0,
+                }, {
+                    val: "translateX(0px)",
+                    dur: 1100,
+                }, {
+                    val: "translateX(-20px) rotate(-20deg)",
+                    dur: 1100,
+                    //@ts-expect-error
+                    eas: glow.easing.ease_out
+                }]
+            });
+    }
 
     set_play_pos_to_prev_keyframe() {
 
-        if (!this.anim) return;
-
+        if (this.sequences.length == 0) return;
+        const { seq } = this.sequences[0];
         let true_x = 0;
 
-        for (const [, prop] of this.anim.props) {
+        for (const [, prop] of seq.props) {
             let candidate = 0;
 
             if (prop instanceof VectorAnimProp)
@@ -163,12 +195,14 @@ export class AnimSys implements Sparky, ObservableModel {
 
     set_play_pos_to_next_keyframe() {
 
-        if (!this.anim) return;
+        if (this.sequences.length == 0) return;
 
-        let true_x = this.anim.duration;
+        const { seq } = this.sequences[0];
 
-        for (const [, prop] of this.anim.props) {
-            let candidate = this.anim.duration;
+        let true_x = seq.duration;
+
+        for (const [, prop] of seq.props) {
+            let candidate = seq.duration;
 
 
             if (prop instanceof VectorAnimProp) {
@@ -198,23 +232,8 @@ export class AnimSys implements Sparky, ObservableModel {
         this.play_pos = true_x;
         spark.queueUpdate(this);
     }
-
-    /**
-     * Set the play pos head to the x value, where x is 
-     * a user space value offset from the edge of the canvas
-     * viewport.
-     */
-    set_play_pos(x: number) {
-        if (this.anim) {
-            const adjusted_pos = x / this.scale_x;
-            const true_x = Math.max(0, adjusted_pos);
-            this.play_pos = true_x;
-            spark.queueUpdate(this);
-        }
-    }
-
     pause() {
-        if (this.anim) {
+        if (this.sequences.length > 0) {
             if (this.PLAYING) {
                 this.PLAYING = false;
             }
@@ -222,14 +241,15 @@ export class AnimSys implements Sparky, ObservableModel {
     }
 
     play() {
-        if (this.anim) {
+        if (this.sequences.length > 0) {
+            const { seq } = this.sequences[0];
             if (!this.PLAYING) {
                 if (this.play_delta > 0) {
-                    if (this.play_pos >= this.anim.duration)
+                    if (this.play_pos >= seq.duration)
                         this.play_pos = 0;
                 } else {
                     if (this.play_pos <= 0)
-                        this.play_pos = this.anim.duration;
+                        this.play_pos = seq.duration;
                 }
 
                 this.start_pos = this.play_pos;
@@ -242,19 +262,20 @@ export class AnimSys implements Sparky, ObservableModel {
     }
 
     run(val: number) {
-        if (this.anim)
-            if (val >= this.anim.duration) {
-                this.anim.run(this.anim.duration);
+        for (const { seq } of this.sequences) {
+            if (val >= seq.duration) {
+                seq.run(seq.duration);
             } else if (val <= 0) {
-                this.anim.run(0);
+                seq.run(0);
             } else {
-                this.anim.run(val);
+                seq.run(val);
             }
-
+        }
     }
 
     scheduledUpdate(step_ratio: number, diff: number) {
-        if (this.anim) {
+        if (this.sequences.length > 0) {
+            const active_sequence = this.sequences[0];
 
             if (this.PLAYING) {
                 this.play_pos += ((step_ratio * this.play_delta) * (16.66));
@@ -266,46 +287,15 @@ export class AnimSys implements Sparky, ObservableModel {
 
                 this.run(this.play_pos);
 
-                if (this.PLAYING && this.play_pos >= this.anim.duration) {
+                if (this.PLAYING && this.play_pos >= active_sequence.seq.duration) {
                     this.play_pos = this.start_pos;
                 }
             }
 
-            this.drawGraph();
+            this.draw();
 
             this.updateWatchers();
         }
-    }
-
-    getKeyFrameAtPoint(upx = this.user_x, upy = this.user_y): [Key<any>, AnimProp<any>] | null {
-
-        if (!this.anim) return null;
-
-        let level = 1;
-
-        for (const [name, prop] of this.anim.props) {
-
-            if (prop instanceof VectorAnimProp) {
-
-            } else {
-                const y = (level * 20);
-
-                for (const key of prop.keys) {
-                    const x = key.t_off * this.scale_x;
-
-                    if (
-                        Math.abs(x - upx) < 6
-                        &&
-                        Math.abs(y - upy) < 6
-                    ) {
-                        return [key, prop];
-                    }
-                }
-                level++;
-            }
-        }
-
-        return null;
     }
 
     updateKeyframes() {
@@ -316,27 +306,31 @@ export class AnimSys implements Sparky, ObservableModel {
         spark.queueUpdate(this);
     }
 
-    drawGraph() {
-        if (this.anim && this.ctx && this.ctx_ele) {
-            this.ctx_ele.width = this.ctx_ele.width;
-            const width = this.ctx_ele.width;
-            const height = this.ctx_ele.height;
-            const tic_scale = this.scale_x;
+    draw() {
+
+        if (this.ctx && this.ctx_ele) {
+
             const ctx = this.ctx;
+            const offsetX = 0;
+            const offsetY = 0;
+            const scaleX = this.scale_x;
+            const scaleY = this.scale_y;
             const upx = this.user_x;
             const upy = this.user_y;
-            const tic_distance = 20;
+            const width = this.ctx_ele.width;
+            const height = this.ctx_ele.height;
+            const tic_distance = 100 * this.scale_x;
+            const gutter_size = 50;
+
+            this.ctx_ele.width = this.ctx_ele.width;
 
             //Draw tic marks
             let tic_mark_count = Math.round(width / tic_distance);
 
             ctx.fillStyle = "rgb(50,50,50)";
 
-            for (let i = 0; i < tic_mark_count; i++) {
-                ctx.fillRect(i * tic_distance, 0, 1, height);
-            }
-
-
+            for (let i = 0; i < tic_mark_count - gutter_size; i++)
+                ctx.fillRect(i * tic_distance + gutter_size, 0, 1, height);
 
             //Draw user input focus
             {
@@ -348,69 +342,62 @@ export class AnimSys implements Sparky, ObservableModel {
                 ctx.fillRect(0, upy, width, 0.5);
             }
 
-            //Draw transport position
+            //Draw current frame line
             {
-                const px = this.play_pos * tic_scale;
+                const px = this.play_pos * scaleX + this.offset_x;
                 ctx.fillStyle = "rgb(150,150,50)";
                 ctx.fillRect(px - 0.5, 0, 1, height);
             }
 
-            if (this.anim) {
+            for (const seq of this.sequences)
+                seq.draw(ctx, upx, upy, scaleX, scaleY, this.offset_x, this.DEBUG);
 
-                //Draw keyframes
-                let level = 1;
 
-                ctx.font = '12px ubuntu';
-
-                for (const [name, prop] of this.anim.props) {
-
-                    const y = (level * 20);
-
-                    ctx.fillStyle = "white";
-                    ctx.fillText(name, 0, y + 6);
-
-                    if (prop instanceof VectorAnimProp) {
-                        for (const keys of prop.scalar_keys) {
-                            ctx.fillStyle = "#ff872b";
-                            drawKeys(keys, ctx, tic_scale, y, upx, upy);
-                        }
-                    } else {
-                        ctx.fillStyle = "#2df0f7";
-                        drawKeys(prop.keys, ctx, tic_scale, y, upx, upy);
-                        level++;
-                    }
-                }
-                let i = 0;
-                for (const [name, prop] of this.anim.props) {
-                    if (prop instanceof VectorAnimProp) {
-                        for (const keys of prop.scalar_keys) {
-                            const color = curve_colors[i++ % curve_colors.length];
-                            drawCurves(keys, ctx, tic_scale, upx, upy, color);
-                        }
-                    } else {
-                        const color = curve_colors[i++ % curve_colors.length];
-                        drawCurves(prop.keys, ctx, tic_scale, upx, upy, color);
-                    }
-                }
-            }
         }
     }
 
     start_delta(
         x: number,
-        y: number
+        y: number,
+        button: number = 0
     ) {
         this.root_x = x;
         this.root_y = y;
 
-        const kf = this.getKeyFrameAtPoint(x, y);
+        if (button == 1) {
+            this.delta_type = DeltaType.PAN;
+        } else if (this.sequences.length > 0) {
 
-        if (kf) {
-            this.selected_keyframes = kf;
-            this.delta_type = "KF";
-        } else {
-            this.delta_type = "SCRUB";
-            this.set_play_pos(x);
+            const seq = this.sequences[0];
+
+            const upx = this.root_x;
+            const upy = this.root_y;
+
+            const obj = seq.getClosest(
+                upx,
+                upy,
+                5,
+                this.offset_x,
+                this.scale_x,
+                this.scale_y
+            );
+
+            if (obj) {
+                this.selected_node = obj;
+
+                const { group: { cnode, keyframe, p1, p2 } } = this.selected_node;
+
+                if (keyframe && keyframe.partition) keyframe.partition.remove(keyframe);
+                if (cnode && cnode.partition) cnode.partition.remove(cnode);
+                if (p1 && p1.partition) { p1.partition.remove(p1); }
+                if (p2 && p2.partition) { p2.partition.remove(p2); }
+
+
+                this.delta_type = DeltaType.KF;
+            } else {
+                this.delta_type = DeltaType.SCRUB;
+                this.set_play_pos(x);
+            }
         }
     }
 
@@ -418,35 +405,43 @@ export class AnimSys implements Sparky, ObservableModel {
         x: number,
         y: number
     ) {
-        if (this.anim) {
+        if (
+            this.delta_type != DeltaType.NONE
+            &&
+            this.sequences.length > 0
+        ) {
+            const s1 = this.sequences[0];
+            const { seq } = s1;
+
             const diff_x = x - this.root_x;
             const diff_y = y - this.root_y;
             this.root_x = x;
             this.root_y = y;
 
             switch (this.delta_type) {
-                case "KF":
+                case DeltaType.KF:
 
-                    if (this.selected_keyframes) {
+                    if (this.selected_node) {
+                        switch (this.selected_node.type) {
+                            case PartitionType.CurveHandle:
+                                break;
+                            case PartitionType.CurveNode: {
+                                this.modifyKeyframePos(<any>this.selected_node, diff_x, diff_y, seq);
+                            } break;
+                            case PartitionType.KeyFrame: {
+                                this.modifyKeyframePos(<any>this.selected_node, diff_x, 0, seq);
 
-                        const [curr, prop] = this.selected_keyframes;
-
-                        const x = diff_x / this.scale_x;
-
-                        curr.t_off += x;
-
-                        prop.updateKeys();
-
-                        let max = 0;
-
-                        for (const [, prop] of this.anim.props)
-                            max = Math.max(prop.duration, max);
-
-                        this.anim.duration = max;
+                            } break;
+                            default: break;
+                        }
                     }
                     break;
-                case "SCRUB":
-                    this.set_play_pos(this.play_pos * this.scale_x + diff_x);
+                case DeltaType.SCRUB:
+                    this.set_play_pos((this.play_pos * this.scale_x) + diff_x + this.offset_x);
+                    break;
+                case DeltaType.PAN:
+                    this.offset_x = Math.min(50, this.offset_x + diff_x);
+                    s1.offsetY = Math.min(5000, Math.max(-5000, s1.offsetY + diff_y));
                     break;
             }
 
@@ -455,211 +450,70 @@ export class AnimSys implements Sparky, ObservableModel {
     }
 
     end_delta() {
-        //Add a history object if changes were detected
-    }
-}
-function drawCurves(
-    keys: Key<any>[],
-    ctx: CanvasRenderingContext2D,
-    tic_scale: number,
-    upx: number,
-    upy: number,
-    color: string = "#9b55c9"
-) {
-    ctx.strokeStyle = color;
-    ctx.fillStyle = color;
-    ctx.lineWidth = 2;
+        if (this.sequences.length > 0) {
+            //Add a history object if changes were detected
+            const { key_partition, curve_partition } = this.sequences[0];
+            if (this.selected_node) {
+                const { group: { cnode, keyframe, p1, p2 } } = this.selected_node;
 
-    let px = 0;
-    let py = 0;
-    let prev = null;
-
-    //Get min and max values to scale items accordingly
-    let min_y = Infinity;
-    let max_y = -Infinity;
-
-    for (const key of keys) {
-        min_y = Math.min(key.val, min_y);
-        max_y = Math.max(key.val, max_y);
-    }
-
-
-    let height = (max_y - min_y);
-    let height_scale = 1 / height;
-    let main_scale = 120 * height_scale;
-    const base = (140);
-
-    for (const key of keys) {
-
-        let y = base + (key.val * main_scale);
-
-        const x = key.t_off * tic_scale;
-
-        ctx.save();
-
-        if (prev) {
-
-            let sx = (x - px);
-            let sy = (y - py);
-
-            ctx.beginPath();
-            ctx.moveTo(px, py);
-
-            if (key.p1_x >= 0) {
-
-                if (key.p2_x >= 0) {
-                    let p1x = key.p1_x * sx + px;
-                    let p1y = key.p1_y * sy + py;
-                    let p2x = key.p2_x * sx + px;
-                    let p2y = key.p2_y * sy + py;
-                    //Cubic
-                    ctx.bezierCurveTo(
-                        p1x,
-                        p1y,
-                        p2x,
-                        p2y,
-                        x, y
-                    );
-                    ctx.stroke();
-
-                    //Draw lines from center to handle
-                    drawLine(ctx, p1x, p1y, px, py, 1);
-                    drawLine(ctx, p2x, p2y, x, y, 1);
-
-                    drawBox(ctx, p1x, p1y, isPointNear(p1x, p1y, upx, upy, 3) ? 4 : 3);
-                    drawBox(ctx, p2x, p2y, isPointNear(p2x, p2y, upx, upy, 3) ? 4 : 3);
-
-                } else {
-                    let p1x = key.p1_x * sx + px;
-                    let p1y = key.p1_y * sy + py;
-                    //Quadratic
-                    ctx.quadraticCurveTo(
-                        p1x,
-                        p1y,
-                        x, y
-                    );
-
-                    drawLine(ctx, p1x, p1y, px, py, 1);
-                    drawLine(ctx, p1x, p1y, x, y, 1);
-
-                    ctx.stroke();
-                    drawBox(ctx, p1x, p1y, isPointNear(p1x, p1y, upx, upy, 3) ? 3 : 2);
-                }
-            } else {
-                ctx.lineTo(x, y);
-                ctx.stroke();
+                if (keyframe) key_partition.add(keyframe);
+                if (cnode) curve_partition.add(cnode);
+                if (p1) curve_partition.add(p1);
+                if (p2) curve_partition.add(p2);
             }
-
-            ctx.restore();
         }
-
-        prev = key;
-        px = x;
-        py = y;
+        this.delta_type = DeltaType.NONE;
+        this.selected_node = null;
     }
 
-    for (const key of keys) {
-        let y = base + key.val * main_scale;
-        const x = key.t_off * tic_scale;
-        drawBox(ctx, x, y, isPointNear(x, y, upx, upy, 5) ? 7 : 5);
-    }
-}
-
-function drawLine(ctx: CanvasRenderingContext2D,
-    x1: number,
-    y1: number,
-    x2: number,
-    y2: number,
-    width: number = 1
-) {
-    ctx.save();
-    ctx.lineWidth = width;
-    ctx.moveTo(x1, y1);
-    ctx.lineTo(x2, y2);
-    ctx.stroke();
-    ctx.restore();
-}
-
-function drawBox(ctx: CanvasRenderingContext2D, p1x: number, p1y: number, r: number,) {
-    let half_r = r * 0.5;
-    ctx.fillRect(p1x - half_r, p1y - half_r, r, r);
-}
-
-function isPointNear(x: number, y: number, upx: number, upy: number, distance: number = 6) {
-    return Math.abs(x - upx) < distance
-        &&
-        Math.abs(y - upy) < distance;
-}
-
-/**
- * Draws diamond keyframes
- * @param keys 
- * @param ctx 
- * @param tic_scale 
- * @param y 
- * @param upx 
- * @param upy 
- */
-function drawKeys(
-    keys: (Key<any>)[],
-    ctx: CanvasRenderingContext2D,
-    tic_scale: number,
-    y: number,
-    upx: number,
-    upy: number
-) {
-    for (const key of keys) {
-
-        let center_offset = 4;
-
-        const x = key.t_off * tic_scale;
-
-        if (Math.abs(x - upx) < 6
-            &&
-            Math.abs(y - upy) < 6) {
-            center_offset = 5;
-        }
-
-        ctx.save();
-
-        ctx.translate(x, y);
-
-        ctx.rotate(Math.PI / 4);
-
-        ctx.fillRect(
-            -center_offset,
-            -center_offset,
-            center_offset * 2,
-            center_offset * 2
-        );
-
-        ctx.restore();
-    }
-}
-
-
-class Partition {
-    width: number;
-    height: number;
-    elements: any[];
-    partitions: Partition[];
-    constructor(
-        w: number,
-        h: number,
+    private modifyKeyframePos(
+        node: PartitionElement<PartitionType.KeyFrame | PartitionType.CurveNode>,
+        diff_x: number,
+        diff_y: number,
+        seq: AnimSequence,
     ) {
-        this.height = h;
-        this.width = w;
-        this.partitions = [];
-        this.elements = [];
-    }
-    getRadius(px: number, py: number, r: number) { };
-    getClosest(px: number, py: number) { }
-    add(ele: any) { };
-    remove(ele: any) { };
-    private split() {
+        const {
+            x, y, obj, group: { vec_index, prop, keyframe, cnode, p1, p2 }
+        } = <PartitionElement<PartitionType.KeyFrame>>node;
 
-    }
-    private join() {
+        const dx = diff_x / this.scale_x;
+        const dy = diff_y / this.scale_y;
 
+        obj.t_off += dx;
+        if (dy) obj.val = prop instanceof VectorAnimProp
+            ? obj.val - dy
+            : obj.val.from(obj.val - dy);
+
+        if (keyframe)
+            keyframe.x += dx;
+        if (cnode) {
+            cnode.x += dx;
+            cnode.y += dy;
+        }
+
+        if ((p1 || p2) && keyframe?.obj) {
+            let keys = prop instanceof VectorAnimProp ? prop.scalar_keys[vec_index] : prop.keys;
+            let prev_index = keys.indexOf(keyframe.obj) - 1;
+            if (prev_index >= 0) {
+                let prev = keys[prev_index];
+            } else {
+                if (p1)
+                    p1.x = -1;
+                if (p2)
+                    p2.x = -1;
+            }
+        }
+
+        if (prop instanceof VectorAnimProp) {
+            prop.updateKeys(vec_index);
+        } else {
+            prop.updateKeys();
+        }
+
+        let max = 0;
+        for (const [, prop] of seq.props)
+            max = Math.max(prop.duration, max);
+
+        seq.duration = max;
     }
 }

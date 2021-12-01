@@ -5,8 +5,8 @@ import { AnimSys } from "./scripts/anim-sys.ts"
 const anim_sys = new AnimSys();
 
 export default <div>
-    <preview {anim_sys} />
-    <timeline model={anim_sys} />
+    <preview class=preview {anim_sys} />
+    <timeline class=timeline model={anim_sys} />
 </div>;
 
 <style>
@@ -18,6 +18,10 @@ export default <div>
         display:flex;
         flex-direction: column;
         height:100vh;
+    }
+
+    .preview, .timeline {
+        height:50%
     }
 
 </style>;
