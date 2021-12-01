@@ -109,18 +109,25 @@ export class AnimSys implements Sparky, ObservableModel {
             const adjusted_pos = (x - this.offset_x) / this.scale_x;
             const true_x = Math.max(0, adjusted_pos);
             this.play_pos = true_x;
-            spark.queueUpdate(this);
+            this.update();
         }
     }
 
     set_zoom_x_delta(delta: number) {
         this.scale_x = Math.min(10, Math.max(0.05, this.scale_x + delta));
-        spark.queueUpdate(this);
+        this.update();
     }
 
     set_zoom_y_delta(delta: number) {
-        this.scale_y = Math.min(100, Math.max(0.05, this.scale_y + delta * this.scale_y));
-        spark.queueUpdate(this);
+        let old_scale = this.scale_y;
+        this.scale_y = Math.min(12800, Math.max(0.05, this.scale_y + delta * this.scale_y));
+
+        for (const seq of this.sequences) {
+            seq.offsetY -= this.user_y;
+            seq.offsetY *= this.scale_y / old_scale;
+            seq.offsetY += this.user_y;
+        }
+        this.update();
     }
 
 
@@ -190,7 +197,7 @@ export class AnimSys implements Sparky, ObservableModel {
         }
 
         this.play_pos = true_x;
-        spark.queueUpdate(this);
+        this.update();
     }
 
     set_play_pos_to_next_keyframe() {
@@ -230,7 +237,7 @@ export class AnimSys implements Sparky, ObservableModel {
         }
 
         this.play_pos = true_x;
-        spark.queueUpdate(this);
+        this.update();
     }
     pause() {
         if (this.sequences.length > 0) {
@@ -255,7 +262,7 @@ export class AnimSys implements Sparky, ObservableModel {
                 this.start_pos = this.play_pos;
                 this.PLAYING = true;
 
-                spark.queueUpdate(this);
+                this.update();
             }
         }
         return false;
@@ -279,7 +286,7 @@ export class AnimSys implements Sparky, ObservableModel {
 
             if (this.PLAYING) {
                 this.play_pos += ((step_ratio * this.play_delta) * (16.66));
-                spark.queueUpdate(this);
+                this.update();
             }
 
             if (this.play_delta > 0) {
@@ -298,7 +305,7 @@ export class AnimSys implements Sparky, ObservableModel {
         }
     }
 
-    updateKeyframes() {
+    update() {
 
         // for (const [name, prop] of this.anim.props)
         //     prop.updateKeys();
@@ -327,11 +334,18 @@ export class AnimSys implements Sparky, ObservableModel {
             //Draw tic marks
             let tic_mark_count = Math.round(width / tic_distance);
 
-            ctx.fillStyle = "rgb(50,50,50)";
+            ctx.strokeStyle = "#333";
 
-            for (let i = 0; i < tic_mark_count - gutter_size; i++)
-                ctx.fillRect(i * tic_distance + gutter_size, 0, 1, height);
-
+            for (
+                let i = (this.offset_x % tic_distance) + gutter_size;
+                i < this.ctx_ele.width;
+                i += tic_distance
+            ) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0);
+                ctx.lineTo(i, height);
+                ctx.stroke();
+            }
             //Draw user input focus
             {
 
@@ -349,10 +363,19 @@ export class AnimSys implements Sparky, ObservableModel {
                 ctx.fillRect(px - 0.5, 0, 1, height);
             }
 
+
+
             for (const seq of this.sequences)
-                seq.draw(ctx, upx, upy, scaleX, scaleY, this.offset_x, this.DEBUG);
-
-
+                seq.draw(
+                    ctx,
+                    this.ctx_ele,
+                    upx,
+                    upy,
+                    scaleX,
+                    scaleY,
+                    this.offset_x,
+                    this.DEBUG
+                );
         }
     }
 
@@ -437,7 +460,7 @@ export class AnimSys implements Sparky, ObservableModel {
                     }
                     break;
                 case DeltaType.SCRUB:
-                    this.set_play_pos((this.play_pos * this.scale_x) + diff_x + this.offset_x);
+                    this.set_play_pos(this.root_x);
                     break;
                 case DeltaType.PAN:
                     this.offset_x = Math.min(50, this.offset_x + diff_x);
@@ -445,7 +468,7 @@ export class AnimSys implements Sparky, ObservableModel {
                     break;
             }
 
-            spark.queueUpdate(this);
+            this.update();
         }
     }
 
@@ -464,6 +487,7 @@ export class AnimSys implements Sparky, ObservableModel {
         }
         this.delta_type = DeltaType.NONE;
         this.selected_node = null;
+        this.update();
     }
 
     private modifyKeyframePos(

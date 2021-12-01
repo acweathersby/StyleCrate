@@ -96,6 +96,7 @@ export class SequenceHarness {
 
     draw(
         ctx: CanvasRenderingContext2D,
+        ctx_ele: HTMLCanvasElement,
         /**
          * Screen space x coord of cursor offset from the left
          * canvas border;
@@ -111,6 +112,7 @@ export class SequenceHarness {
         offsetX: number,
         DEBUG: boolean = true
     ) {
+        
         //Draw keyframes
         let level = 1;
 
@@ -153,8 +155,17 @@ export class SequenceHarness {
 
         ctx.restore();
         ctx.save();
+        ctx.strokeStyle = "rgb(50,50,50)";
+        ctx.lineWidth = 1;
+
         ctx.beginPath();
-        ctx.rect(0, 100, 5000, 400);
+        ctx.rect(0, 100, ctx_ele.width, ctx_ele.height - 100);
+        ctx.clip();
+        drawRuler(ctx, ctx_ele, offsetY, scaleY);
+
+
+        ctx.beginPath();
+        ctx.rect(50, 100, ctx_ele.width - 50, ctx_ele.height - 100);
         ctx.clip();
 
         if (DEBUG)
@@ -183,7 +194,7 @@ export class SequenceHarness {
 
         ctx.restore();
 
-        ctx.clearRect(0, 90, 5000, 20);
+        ctx.clearRect(0, 90, ctx_ele.width, 20);
     }
 
     getClosest(
@@ -209,3 +220,77 @@ export class SequenceHarness {
     }
 }
 
+function drawRuler(
+    ctx: CanvasRenderingContext2D,
+    canvas: HTMLCanvasElement,
+    offset_y: number,
+    scale_y: number
+) {
+
+    const
+        steps = [
+            [Infinity, 0.00005, 0.0005],
+            [1600, 0.02, 0.01],
+            [800, 0.025, 0.05],
+            [400, 0.025, 0.1],
+            [200, 0.05, 0.2],
+            [100, 0.1, 0.5],
+            [50, 0.25, 1],
+            [25, 0.5, 2],
+            [12.5, 1, 5],
+            [6.25, 2.5, 10],
+            [3.125, 5, 20],
+            [1.556, 10, 50],
+            [1, 25, 100],
+            [0.25, 50, 200],
+            [0.125, 100, 500],
+            [0.0625, 250, 1000],
+            [0.03125, 500, 2000],
+            [-Infinity, 250, 1000],
+
+        ],
+        py = offset_y / scale_y,
+        max_height = canvas.height;
+
+    let major_notch_distance = 0;
+    let minor_notch_distance = 0;
+
+    for (let i = 0; i < steps.length; i++) {
+        if (scale_y >= steps[i][0]) {
+            major_notch_distance = steps[i][2];
+            minor_notch_distance = steps[i][1];
+            break;
+        }
+    }
+
+    const step = major_notch_distance;
+
+    const adjust = (py % (step)) * scale_y;
+
+    let offset = -step * scale_y;
+
+    ctx.fillStyle = "#333";
+    let i = 0;
+    //Small markers
+    while (offset + adjust < max_height) {
+
+        ctx.fillRect(50, offset + adjust, canvas.width, 1);
+        offset += minor_notch_distance * scale_y;
+    }
+    offset = -step * scale_y;
+
+    ctx.fillStyle = "#667";
+
+    let pos_y = offset_y * scale_y;
+
+    //large markers
+    while (offset + adjust < max_height) {
+        ctx.fillRect(50, offset + adjust, canvas.width, 1);
+        ctx.fillText(Math.round(((offset_y) - (offset + adjust)) / scale_y * 100) / 100, 10, offset + adjust);
+        //ctx.fillText(offset_y, 10, offset + adjust - 20);
+        //ctx.fillText(offset, 10, offset + adjust - 10);
+        //ctx.fillText(adjust, 10, offset + adjust);
+        offset += major_notch_distance * scale_y;
+    }
+
+}

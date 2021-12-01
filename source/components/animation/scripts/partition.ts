@@ -357,7 +357,7 @@ export class Partition {
 
         if (this.partitions.length > 0) {
 
-            if (this.numberOfElements() < this.max_elements - 1) {
+            if (this.numberOfElements() <= this.max_elements) {
 
                 for (const part of this.partitions) {
                     this.elements.push(...part.dissolve());
